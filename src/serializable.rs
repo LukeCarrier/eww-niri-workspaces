@@ -18,24 +18,17 @@ struct Output {
 struct Workspace {
     id: u64,
     index: u8,
+    name: Option<String>,
     #[serde(serialize_with = "ordered_map_as_list")]
-    columns: BTreeMap<usize, Column>,
+    windows: BTreeMap<u64, Window>,
     is_active: bool,
-}
-
-#[derive(Serialize)]
-struct Column {
-    index: usize,
-    windows: Vec<Window>,
-    num_windows: usize,
-    has_focused_window: bool,
 }
 
 #[derive(Serialize)]
 struct Window {
     id: u64,
-    column: usize,
     is_focused: bool,
+    title: Option<String>,
 }
 
 fn ordered_map_as_list<S, T>(
@@ -71,7 +64,8 @@ impl From<&State> for SerializableState {
                 Workspace {
                     id: workspace.id,
                     index: workspace.idx,
-                    columns: BTreeMap::new(),
+                    name: workspace.name.clone(),
+                    windows: BTreeMap::new(),
                     is_active: workspace.is_active,
                 },
             );
@@ -93,32 +87,14 @@ impl From<&State> for SerializableState {
                 None => continue,
             };
 
-            let column_index = window
-                .location
-                .tile_pos_in_scrolling_layout
-                .expect(
-                    "Tile position not set, something is wrong, non-floating windows should have a tile position",
-                )
-                .0;
-
-            let column = workspace
-                .columns
-                .entry(column_index)
-                .or_insert_with(|| Column {
-                    index: column_index,
-                    windows: Vec::new(),
-                    num_windows: 0,
-                    has_focused_window: false,
-                });
-
-            if window.is_focused {
-                column.has_focused_window = true;
-            }
-            column.windows.push(Window {
-                id: window.id,
-                column: column_index,
-                is_focused: window.is_focused,
-            });
+            workspace.windows.insert(
+                window.id,
+                Window {
+                    id: window.id,
+                    title: window.title.clone(),
+                    is_focused: window.is_focused,
+                },
+            );
         }
 
         SerializableState { outputs }

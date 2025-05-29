@@ -1,29 +1,26 @@
-use niri_ipc::{socket::Socket, Event, Window, Workspace};
+use niri_ipc::{socket::Socket, Event, Request, Response, Window, Workspace};
 
 mod serializable;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut state = State::new();
     let niri_socket_env = std::env::var("NIRI_SOCKET");
-    let connection = if let Ok(niri_socket) = niri_socket_env {
+    let mut connection = if let Ok(niri_socket) = niri_socket_env {
         Socket::connect_to(niri_socket).unwrap()
     } else {
         Socket::connect().unwrap()
     };
-    let (r, mut block_read_next_event) = connection.send(niri_ipc::Request::EventStream).unwrap();
-    match r {
-        Ok(_) => loop {
-            let event = block_read_next_event().unwrap();
+    let reply = connection.send(Request::EventStream)?;
+    if matches!(reply, Ok(Response::Handled)) {
+        let mut read_one_event = connection.read_events();
+        while let Ok(event) = read_one_event() {
             state.update_with_event(event);
             let serializable_state = serializable::SerializableState::from(&state);
             let json = serde_json::to_string(&serializable_state).unwrap();
             println!("{}", json);
-        },
-        Err(e) => {
-            eprintln!("Niri error: {}", e);
-            std::process::exit(1);
         }
     }
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -108,15 +105,9 @@ impl State {
                     }
                 }
             }
-            Event::WindowsLocationsChanged { changes } => {
-                for (id, window_location) in changes {
-                    if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
-                        window.location = window_location;
-                    }
-                }
-            }
             Event::KeyboardLayoutsChanged { .. } => { /* Do nothing */ }
             Event::KeyboardLayoutSwitched { .. } => { /* Do nothing */ }
+            e => eprintln!("Unhandled event: {:?}", e),
         }
     }
 }
